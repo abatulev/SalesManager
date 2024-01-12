@@ -1,0 +1,244 @@
+﻿@page "/details/{id:int}"
+@rendermode InteractiveWebAssembly
+@using SalesManager.ViewModels
+@using System.Text.Json
+@inject IJSRuntime JSRuntime;
+@inject NavigationManager NavigationManager
+
+<Toasts class="p-3" Messages="messages" Placement="ToastsPlacement.TopRight" AutoHide="true" Delay="6000" />
+<PageTitle>OrderDetails</PageTitle>
+<h2>Order Details</h2>
+
+<div class="form-row order-details">
+    <div class="form-group col-3 inline">
+        <label>Name</label>
+        <InputText disabled="true" @bind-Value="order.Name" class="form-control" />
+    </div>
+    <div class="form-group col-1 inline">
+        <label>State</label>
+        <InputText disabled="true" @bind-Value="order.State" class="form-control" />
+    </div>
+</div>
+
+@if (!addMode)
+{
+    <div class="btns-margin">
+        <Button Color="ButtonColor.Success" @onclick="ToggleCreate"><Icon Name="IconName.CartPlus" /> Add Window </Button>
+    </div>
+    <div class="btns-margin">
+        <Button Color="ButtonColor.Primary" @onclick="ReloadWindows"><Icon Name="IconName.ArrowClockwise" /> Reload Windows </Button>
+    </div>
+}
+else
+{
+    <EditForm EditContext="@editContext" OnValidSubmit="HandleValidSubmit" @onreset="HandleReset">
+        <DataAnnotationsValidator />
+        <div class="form-row">
+            <div class="form-group col-3 inline">
+                <label>Name</label>
+                <InputText @bind-Value="model.Name" class="form-control" />
+                <ValidationMessage For="@(() => model.Name)" />
+            </div>
+            <div class="form-group col-1 inline">
+                <label>Quantity Of Windows</label>
+                <NumberInput TValue="int" @bind-Value="model.QuantityOfWindows" class="form-control" />
+                <ValidationMessage For="@(() => model.QuantityOfWindows)" />
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group-padding">
+                <button type="submit" class="btn btn-primary mr-1">Submit</button>
+                <button type="reset" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </EditForm>
+}
+
+@if (windows == null)
+{
+    <p><em>Loading...</em></p>
+}
+else if (windows.Count == 0)
+{
+    <div>Windows not found!!!</div>
+}
+else
+{
+    <table class="table">
+        <tr>
+            <th>#</th>
+            <th>Name</th>
+            <th>QuantityOfWindows</th>
+            <th>TotalSubElements</th>
+            <th>Actions</th>
+        </tr>
+
+        @foreach (var window in windows)
+        {
+
+            if (window.IsEditing)
+            {
+                <tr>
+                    <td scope="row">@window.Id</td>
+                    <td>
+                        <input type="text" class="form-control" placeholder="Enter the name of window" @bind="@window.Name" />
+                    </td>
+                    <td>
+                        <NumberInput TValue="int" @bind-Value="window.QuantityOfWindows" placeholder="Enter quatity of window" class="form-control" />
+                    </td>
+                    <td>
+                        @window.TotalSubElements
+                    </td>
+                    <td>
+
+                        <Button Color="ButtonColor.Primary" Outline="true" Size="Size.Small" @onclick="() => EnableEditing(false, window)"> Cancel Edit </Button>
+                        <Button Color="ButtonColor.Success" Outline="true" Size="Size.Small" @onclick="() => UpdateWindow(window)"> Send Updates </Button>
+                    </td>
+                </tr>
+            }
+            else
+            {
+                <tr>
+                    <td scope="row">@window.Id</td>
+                    <td>@window.Name</td>
+                    <td>@window.QuantityOfWindows</td>
+                    <td>@window.TotalSubElements</td>
+                    <td>
+                        <Button Color="ButtonColor.Primary" Outline="true" Size="Size.Small" @onclick="(() => EnableEditing(true, window))"> Edit </Button>
+                        @* <Button Color="ButtonColor.Info" Outline="true" Size="Size.Small" @onclick="(() => Details(order))"> Details </Button>*@
+                        <Button Color="ButtonColor.Danger" Outline="true" Size="Size.Small" @onclick="(() => DeleteWindow(window))"> Delete </Button>
+                        <Button Color="ButtonColor.Primary" Outline="true" Size="Size.Small"  @onclick="() => ToggleContentAsync(window.Id)">Show SubElements</Button>
+                    </td>
+                </tr>
+            }
+        }
+    </table>
+
+    <Collapse @ref="collapse1">
+        @* <CascadingValue Value="this"> *@
+            <SubElements WindowId="windowId" OnSubElementUpdate="SubElementsChanged"></SubElements>
+        @* </CascadingValue> *@
+    </Collapse>
+}
+
+@code {
+    [Parameter] public int id { get; set; }
+    private OrderViewModel order = new OrderViewModel();
+    private WindowViewModel model = new WindowViewModel();
+    private EditContext editContext;
+    private string baseUri;
+    private int windowId = 0;
+    private int totalSubElements = 0;
+
+    List<ToastMessage> messages = new List<ToastMessage>();
+    HttpClient httpClient;
+    IList<WindowViewModel> windows;
+    bool addMode = false;
+
+    Collapse collapse1 = default!;
+
+    private async Task ToggleContentAsync(int id){
+        if(windowId == 0 || windowId == id)
+        {
+            await collapse1.ToggleAsync();
+        }
+        windowId = id;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        baseUri = NavigationManager.BaseUri;
+        editContext = new EditContext(model);
+        httpClient = new();
+        await ReloadOrder();
+        await ReloadWindows();
+    }
+
+    private async Task ReloadOrder()
+    {
+        order = await httpClient.GetFromJsonAsync<OrderViewModel>(baseUri + $"api/order/GetOrderById/{id}");
+    }
+
+    private async Task ReloadWindows()
+    {
+        windows = await httpClient.GetFromJsonAsync<IList<WindowViewModel>>(baseUri + $"api/window/GetWindowsByOrderId/{id}");
+    }
+
+    private void EnableEditing(bool flag, WindowViewModel order)
+    {
+        order.IsEditing = flag;
+    }
+
+    private void ToggleCreate()
+    {
+        addMode = !addMode;
+    }
+
+    private void HandleReset()
+    {
+        model = new();
+        editContext = new EditContext(model);
+        ToggleCreate();
+    }
+
+    private void CreateToastMessage(ToastType toastType, string message)
+    {
+        var toast = new ToastMessage
+            {
+                Type = toastType,
+                Message = $"{message}.\nDateTime: {DateTime.Now}"
+            };
+        messages.Add(toast);
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        model.OrderId = id;
+        var response = await httpClient.PostAsJsonAsync(baseUri + "api/window", model);
+        if (response.IsSuccessStatusCode)
+        {
+            CreateToastMessage(ToastType.Success, "Window added successfully!");
+            HandleReset();
+            await ReloadWindows();
+        }
+        else
+        {
+            CreateToastMessage(ToastType.Warning, "Something went wrong!");
+        }
+    }
+
+    private async Task UpdateWindow(WindowViewModel window)
+    {
+        EnableEditing(false, window);
+
+        var response = await httpClient.PutAsJsonAsync(baseUri + "api/window", window);
+        if (response.IsSuccessStatusCode)
+        {
+            CreateToastMessage(ToastType.Success, "Window updated successfully!");
+        }
+        else
+        {
+            CreateToastMessage(ToastType.Warning, "Something went wrong!");
+        }
+    }
+
+    private async Task DeleteWindow(WindowViewModel window)
+    {
+        var response = await httpClient.DeleteAsync(baseUri + "api/window/" + window.Id);
+
+        if (response.IsSuccessStatusCode)
+        {
+            CreateToastMessage(ToastType.Success, "Window was deleted successfully!");
+        }
+        else
+        {
+            CreateToastMessage(ToastType.Warning, "Something went wrong!");
+        }
+        await ReloadWindows();
+    }
+
+    public async void SubElementsChanged()
+    {
+        await ReloadWindows();
+    }
+}

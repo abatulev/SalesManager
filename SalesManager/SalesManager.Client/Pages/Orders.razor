@@ -1,0 +1,216 @@
+﻿@page "/"
+@rendermode InteractiveWebAssembly
+@using SalesManager.ViewModels
+@using System.Text.Json
+@inject IJSRuntime JSRuntime;
+@inject NavigationManager NavigationManager
+
+<PageTitle>Orders</PageTitle>
+
+<h2>Orders</h2>
+
+<Toasts class="p-3" Messages="messages" Placement="ToastsPlacement.TopRight" AutoHide="true" Delay="6000" />
+
+@if (!addMode)
+{
+    <div class="btns-margin">
+        <Button Color="ButtonColor.Success" @onclick="ToggleCreate"><Icon Name="IconName.CartPlus" /> Add Order </Button>
+    </div>
+    <div class="btns-margin">
+        <Button Color="ButtonColor.Primary" @onclick="ReloadOrders"><Icon Name="IconName.ArrowClockwise" /> Reload Orders </Button>
+    </div>
+}
+else
+{
+    <EditForm EditContext="@editContext" OnValidSubmit="HandleValidSubmit" @onreset="HandleReset">
+        <DataAnnotationsValidator />
+        <div class="form-row">
+            <div class="form-group col-3 inline">
+                <label>Name</label>
+                <InputText @bind-Value="model.Name" class="form-control" />
+                <ValidationMessage For="@(() => model.Name)" />
+            </div>
+            <div class="form-group col-1 inline">
+                <label>State</label>
+                <InputText @bind-Value="model.State" class="form-control" />
+                <ValidationMessage For="@(() => model.State)" />
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group-padding">
+                <button type="submit" class="btn btn-primary mr-1">Submit</button>
+                <button type="reset" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </EditForm>
+}
+
+@if (orders == null)
+{
+    <p><em>Loading...</em></p>
+}
+else if (orders.Count == 0)
+{
+    <div>None Found</div>
+}
+else
+{
+    <table class="table">
+        <tr>
+            <th>#</th>
+            <th>Name</th>
+            <th>State</th>
+            <th>Actions</th>
+        </tr>
+    @foreach (var order in orders)
+    {
+        if (order.IsEditing)
+        {
+            <tr>
+                <td scope="row">@order.Id</td>
+                <td>
+                    <input type="text" class="form-control" placeholder="Enter the Order name" @bind="@order.Name" />
+                </td>
+                <td>
+                    <input type="text" class="form-control" placeholder="Enter the State" @bind="@order.State" />
+                </td>
+                <td>
+
+                        <Button Color="ButtonColor.Primary" Outline="true" Size="Size.Small" @onclick="() => EnableEditing(false, order)"> Cancel Edit </Button>
+                        <Button Color="ButtonColor.Success" Outline="true" Size="Size.Small" @onclick="() => UpdateOrder(order)"> Send Updates </Button>
+                </td>
+            </tr>
+        }
+        else
+        {
+            <tr>
+                <td scope="row">@order.Id</td>
+                <td>@order.Name</td>
+                <td>@order.State</td>
+                <td>
+                        <Button Color="ButtonColor.Primary" Outline="true" Size="Size.Small" @onclick="(() => EnableEditing(true, order))"> Edit </Button>
+                        <Button Color="ButtonColor.Info" Outline="true" Size="Size.Small" @onclick="(() => Details(order))"> Details </Button>
+                        <Button Color="ButtonColor.Danger" Outline="true" Size="Size.Small" @onclick="(() => DeleteOrder(order))"> Delete </Button>
+                </td>
+            </tr>
+        }
+     }
+    </table> 
+}
+
+@code {
+
+    private OrderViewModel model = new OrderViewModel();
+    private EditContext editContext;
+    private string baseUri;
+
+    List<ToastMessage> messages = new List<ToastMessage>();
+    HttpClient httpClient;
+    IList<OrderViewModel> orders;
+    bool addMode = false;
+
+
+
+    protected override async Task OnInitializedAsync()
+    {
+        baseUri = NavigationManager.BaseUri;
+        editContext = new EditContext(model);
+        httpClient = new();
+        await ReloadOrders();
+    }
+
+    private async Task ReloadOrders(){
+        orders = await httpClient.GetFromJsonAsync<IList<OrderViewModel>>(baseUri + "api/Order");
+    }
+
+    private void EnableEditing(bool flag, OrderViewModel order)
+    {
+        order.IsEditing = flag;
+    }
+
+    private void ToggleCreate()
+    {
+        addMode = !addMode;
+    }
+
+    private void HandleReset()
+    {
+        model = new();
+        editContext = new EditContext(model);
+        ToggleCreate();
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        var response = await httpClient.PostAsJsonAsync(baseUri + "api/Order", model);
+        if (response.IsSuccessStatusCode)
+        {
+            CreateToastMessage(ToastType.Success, "Order added successfully!");
+            HandleReset();
+            await ReloadOrders();
+        }
+        else
+        {
+            CreateToastMessage(ToastType.Warning, "Something went wrong!");
+        }
+    }
+
+    private async Task UpdateOrder(OrderViewModel order)
+    {
+        EnableEditing(false, order);
+
+        var response = await httpClient.PutAsJsonAsync(baseUri + "api/Order", order);
+        if (response.IsSuccessStatusCode)
+        {
+            CreateToastMessage(ToastType.Success, "Order updated successfully!");
+        }
+        else
+        {
+            CreateToastMessage(ToastType.Warning, "Something went wrong!");
+        }
+    }
+
+    private void CreateToastMessage(ToastType toastType, string message){
+        var toast = new ToastMessage
+        {
+            Type = toastType,
+            Message = $"{message}.\nDateTime: {DateTime.Now}"
+        };
+        messages.Add(toast);
+    }
+
+    private async Task Submit()
+    {
+        var response = await httpClient.PostAsJsonAsync(baseUri + "api/Order", model);
+        if (response.IsSuccessStatusCode)
+        {
+            CreateToastMessage(ToastType.Success, "Order added successfully!");
+            HandleReset();
+            orders = await httpClient.GetFromJsonAsync<IList<OrderViewModel>>(NavigationManager.BaseUri + "api/Order");
+        }
+        else
+        {
+            CreateToastMessage(ToastType.Warning, "Something went wrong!");
+        }
+    }
+
+    private async Task DeleteOrder(OrderViewModel order)
+    {
+        var response = await httpClient.DeleteAsync(baseUri + "api/Order/" + order.Id);
+
+        if (response.IsSuccessStatusCode)
+        {
+            CreateToastMessage(ToastType.Success, "Order was deleted successfully!");
+        }
+        else
+        {
+            CreateToastMessage(ToastType.Warning, "Something went wrong!");
+        }
+        await ReloadOrders();
+    }
+
+    private void Details(OrderViewModel order)
+    {
+        NavigationManager.NavigateTo($"details/{order.Id}");
+    }
+}

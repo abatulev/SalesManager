@@ -1,0 +1,259 @@
+﻿@using SalesManager.ViewModels
+@using System.Text.Json
+@using SalesManager.Constants
+@inject IJSRuntime JSRuntime;
+@inject NavigationManager NavigationManager
+
+<Toasts class="p-3" Messages="messages" Placement="ToastsPlacement.TopRight" AutoHide="true" Delay="6000" />
+
+<h3>SubElements</h3>
+
+
+@if (subElements == null)
+{
+    <p><em>Loading...</em></p>
+}
+else if (subElements.Count == 0)
+{
+    <div>SunElements not found!!!</div>
+}
+else
+{
+    <table class="table">
+        <tr>
+            <th>#</th>
+            <th>Element</th>
+            <th>Type</th>
+            <th>Width</th>
+            <th>Height</th>
+            <th>Actions</th>
+        </tr>
+
+        @foreach (var subElement in subElements)
+        {
+
+            if (subElement.IsEditing)
+            {
+                <tr>
+                    <td scope="row">@subElement.Id</td>
+                    <td>
+                        <NumberInput TValue="int" @bind-Value="subElement.Element" placeholder="Enter element" class="form-control" />
+                    </td>
+                    <td>
+                        <InputSelect @bind-Value="@subElement.Type">
+
+                            @foreach (int type in Enum.GetValues(typeof(Enums.SubElementType)))
+                            {
+                                if (subElement.Type == type)
+                                {
+                                    <option value="@type" selected>@GetTypeValue(type)</option>
+                                }
+                                else
+                                {
+                                    <option value="@type">@GetTypeValue(type)</option>
+                                }
+                            } 
+
+                        </InputSelect>
+                    </td>
+                    <td>
+                        <NumberInput TValue="int" @bind-Value="subElement.Width" placeholder="Enter width of element" class="form-control" />
+                    </td>
+                    <td>
+                        <NumberInput TValue="int" @bind-Value="subElement.Height" placeholder="Enter height of element" class="form-control" />
+                    </td>
+                    <td>
+
+                        <Button Color="ButtonColor.Primary" Outline="true" Size="Size.Small" @onclick="() => EnableEditing(false, subElement)"> Cancel Edit </Button>
+                        <Button Color="ButtonColor.Success" Outline="true" Size="Size.Small" @onclick="() => UpdateSubElement(subElement)"> Send Updates </Button>
+                    </td>
+                </tr>
+            }
+            else
+            {
+                <tr>
+                    <td scope="row">@subElement.Id</td>
+                    <td>@subElement.Element</td>
+                    <td>
+                        @GetTypeValue(subElement.Type)
+                    </td>
+                    <td>@subElement.Width</td>
+                    <td>@subElement.Height</td>
+                    <td>
+                        <Button Color="ButtonColor.Primary" Outline="true" Size="Size.Small" @onclick="(() => EnableEditing(true, subElement))"> Edit </Button>
+                        <Button Color="ButtonColor.Danger" Outline="true" Size="Size.Small" @onclick="(() => DeleteWindow(subElement))"> Delete </Button>
+                    </td>
+                </tr>
+            }
+        }
+    </table>
+}
+@if (!addMode)
+{
+    <div class="btns-margin">
+        <Button Color="ButtonColor.Success" @onclick="ToggleCreate"><Icon Name="IconName.CartPlus" /> Add SubElement </Button>
+    </div>
+    <div class="btns-margin">
+        <Button Color="ButtonColor.Primary" @onclick="ReloadSubElements"><Icon Name="IconName.ArrowClockwise" /> Reload SubElements </Button>
+    </div>
+}
+else
+{
+    <EditForm EditContext="@editContext" OnValidSubmit="HandleValidSubmit" @onreset="HandleReset">
+        <DataAnnotationsValidator />
+        <div class="form-row">
+            <div class="form-group col-3 inline">
+                <label>Element</label>
+                <NumberInput TValue="int" @bind-Value="model.Element" Placeholder="Enter the element" class="form-control" />
+                <ValidationMessage For="@(() => model.Element)" />
+            </div>
+            <div class="form-group col-3 inline">
+                <label>Type</label>
+                <InputSelect @bind-Value="@model.Type" class="form-control">
+                    <option value="1" selected>Doors</option>
+                    <option value="2">Window</option>
+                </InputSelect>
+                <ValidationMessage For="@(() => model.Type)" />
+            </div>
+            <div class="form-group col-1 inline">
+                <label>Width</label>
+                <NumberInput TValue="int" @bind-Value="model.Width" Placeholder="Enter the width" class="form-control" />
+                <ValidationMessage For="@(() => model.Width)" />
+            </div>
+            <div class="form-group col-1 inline">
+                <label>Height</label>
+                <NumberInput TValue="int" @bind-Value="model.Height" Placeholder="Enter the height" class="form-control" />
+                <ValidationMessage For="@(() => model.Height)" />
+            </div>
+        </div>
+        <div class="form-row">
+            <div class="form-group-padding">
+                <button type="submit" class="btn btn-primary mr-1">Submit</button>
+                <button type="reset" class="btn btn-secondary">Cancel</button>
+            </div>
+        </div>
+    </EditForm>
+}
+
+@code {
+    [Parameter]
+    public int WindowId { get; set; }
+    [Parameter]
+    public EventCallback OnSubElementUpdate { get; set; }
+
+    // [CascadingParameter]
+    // public OrderDetails _Parent { get; set; }
+
+
+    List<ToastMessage> messages = new List<ToastMessage>();
+    IList<SubElementViewModel> subElements;
+    HttpClient httpClient = new();
+    private string baseUri;
+    bool addMode = false;
+    private SubElementViewModel model = new SubElementViewModel();
+    private EditContext editContext;
+
+
+    protected override async Task OnParametersSetAsync()
+    {
+        baseUri = NavigationManager.BaseUri;
+        if (WindowId > 0)
+        {
+            await ReloadSubElements();
+        }
+        var ttt = subElements;
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        editContext = new EditContext(model);
+    }
+
+    private async Task ReloadSubElements()
+    {
+        subElements = await httpClient.GetFromJsonAsync<IList<SubElementViewModel>>(baseUri + $"api/subelement/SubElementsByWindowId/{WindowId}");
+    }
+
+    private void EnableEditing(bool flag, SubElementViewModel subElement)
+    {
+        subElement.IsEditing = flag;
+    }
+
+    private string GetTypeValue(int id)
+    {
+        var val = (Enums.SubElementType)id;
+        return val.ToString();
+    }
+
+    private void ToggleCreate()
+    {
+        addMode = !addMode;
+    }
+
+    private void HandleReset()
+    {
+        model = new();
+        editContext = new EditContext(model);
+        ToggleCreate();
+    }
+
+    private async Task HandleValidSubmit()
+    {
+        model.WindowId = WindowId;
+        var response = await httpClient.PostAsJsonAsync(baseUri + "api/subelement", model);
+        if (response.IsSuccessStatusCode)
+        {
+            CreateToastMessage(ToastType.Success, "Order added successfully!");
+            HandleReset();
+            await ReloadSubElements();
+
+            await OnSubElementUpdate.InvokeAsync();
+            // _Parent.SubElementsChanged();
+        }
+        else
+        {
+            CreateToastMessage(ToastType.Warning, "Something went wrong!");
+        }
+    }
+
+    private void CreateToastMessage(ToastType toastType, string message)
+    {
+        var toast = new ToastMessage
+            {
+                Type = toastType,
+                Message = $"{message}.\nDateTime: {DateTime.Now}"
+            };
+        messages.Add(toast);
+    }
+
+    private async Task DeleteWindow(SubElementViewModel subElement)
+    {
+        var response = await httpClient.DeleteAsync(baseUri + "api/subElement/" + subElement.Id);
+
+        if (response.IsSuccessStatusCode)
+        {
+            CreateToastMessage(ToastType.Success, "SubElement was deleted successfully!");
+        }
+        else
+        {
+            CreateToastMessage(ToastType.Warning, "Something went wrong!");
+        }
+        await ReloadSubElements();
+        await OnSubElementUpdate.InvokeAsync();
+    }
+
+    private async Task UpdateSubElement(SubElementViewModel subElement)
+    {
+        EnableEditing(false, subElement);
+
+        var response = await httpClient.PutAsJsonAsync(baseUri + "api/subElement", subElement);
+        if (response.IsSuccessStatusCode)
+        {
+            CreateToastMessage(ToastType.Success, "SubElement updated successfully!");
+        }
+        else
+        {
+            CreateToastMessage(ToastType.Warning, "Something went wrong!");
+        }
+    }
+}
